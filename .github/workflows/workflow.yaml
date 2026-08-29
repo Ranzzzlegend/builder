@@ -1,38 +1,51 @@
 name: Build Flutter APK
+
 on:
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.35.2'
           channel: 'stable'
+
       - name: Extract ZIP & Buat Project Baru
         run: |
           unzip -o flutter-project.zip -d extracted
           PUBSPEC=$(find extracted -name "pubspec.yaml" | head -n 1)
-          if [ -z "$PUBSPEC" ]; then echo "pubspec.yaml tidak ditemukan"; exit 1; fi
+          if [ -z "$PUBSPEC" ]; then
+            echo "❌ pubspec.yaml tidak ditemukan"
+            exit 1
+          fi
           flutter create -t app new_app
           SRC_DIR=$(dirname "$PUBSPEC")
           rm -rf new_app/lib
           cp -r "$SRC_DIR/lib" new_app/lib
           cp "$PUBSPEC" new_app/pubspec.yaml
-          if [ -d "$SRC_DIR/assets" ]; then cp -r "$SRC_DIR/assets" new_app/assets; fi
+          if [ -d "$SRC_DIR/assets" ]; then
+            cp -r "$SRC_DIR/assets" new_app/assets
+          fi
           cd new_app
+
       - name: Install Dependencies
         run: cd new_app && flutter pub get
+
       - name: Build APK
         run: cd new_app && flutter build apk --release
+
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
