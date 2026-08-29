@@ -1,4 +1,5 @@
 name: Build Flutter APK
+
 on:
   workflow_dispatch:
 
@@ -8,24 +9,35 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-      - name: Setup JDK
+
+      - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.24.0'
           channel: 'stable'
+
       - name: Extract ZIP
         run: |
           unzip -o flutter-project.zip -d .
-          chmod +x android/gradlew
+          # Pastikan pubspec.yaml ada di root
+          if [ ! -f "pubspec.yaml" ]; then
+            echo "Error: pubspec.yaml tidak ditemukan setelah ekstraksi"
+            find . -name "pubspec.yaml" -print
+            exit 1
+          fi
+
       - name: Install Dependencies
         run: flutter pub get
+
       - name: Build APK
         run: flutter build apk --release
+
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
