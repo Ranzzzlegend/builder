@@ -3,7 +3,7 @@ name: Build Flutter APK
 on:
   push:
     branches:
-      - 'build-*'  # Berjalan pada semua branch dengan awalan build-
+      - 'build-*'  # Berjalan pada semua branch dengan awalan "build-"
 
 jobs:
   build:
@@ -21,26 +21,44 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.35.2'
+          flutter-version: '3.35.2' # Versi Flutter dengan Dart 3.10
           channel: 'stable'
 
-      - name: Extract ZIP & Buat Project Baru
+      - name: Extract & Cari pubspec.yaml
         run: |
           unzip -o flutter-project.zip -d extracted
           PUBSPEC=$(find extracted -name "pubspec.yaml" | head -n 1)
           if [ -z "$PUBSPEC" ]; then
             echo "❌ pubspec.yaml tidak ditemukan"
+            find extracted -type f | head -20
             exit 1
           fi
+
+      - name: Buat Project Baru & Salin Kode
+        run: |
+          # 1. Buat project baru yang valid
           flutter create -t app new_app
-          SRC_DIR=$(dirname "$PUBSPEC")
-          rm -rf new_app/lib
-          cp -r "$SRC_DIR/lib" new_app/lib
-          cp "$PUBSPEC" new_app/pubspec.yaml
+
+          # 2. Cari folder sumber
+          SRC_DIR=$(dirname $(find extracted -name "pubspec.yaml" | head -n 1))
+          echo "Source directory: $SRC_DIR"
+
+          # 3. Salin lib/ (kode utama)
+          if [ -d "$SRC_DIR/lib" ]; then
+            rm -rf new_app/lib
+            cp -r "$SRC_DIR/lib" new_app/lib
+          else
+            echo "❌ folder lib tidak ditemukan"
+            exit 1
+          fi
+
+          # 4. Salin pubspec.yaml
+          cp "$SRC_DIR/pubspec.yaml" new_app/pubspec.yaml
+
+          # 5. Salin assets/ jika ada
           if [ -d "$SRC_DIR/assets" ]; then
             cp -r "$SRC_DIR/assets" new_app/assets
           fi
-          cd new_app
 
       - name: Install Dependencies
         run: cd new_app && flutter pub get
