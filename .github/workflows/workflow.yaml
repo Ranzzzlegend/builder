@@ -1,7 +1,9 @@
 name: Build Flutter APK
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - 'build-*'  # Berjalan pada semua branch dengan awalan build-
 
 jobs:
   build:
