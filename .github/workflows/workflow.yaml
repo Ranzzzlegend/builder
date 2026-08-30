@@ -1,9 +1,8 @@
 name: Build Flutter APK
-
 on:
   push:
     branches:
-      - 'build-*'  # Berjalan pada semua branch dengan awalan "build-"
+      - 'build-*'
 
 jobs:
   build:
@@ -21,7 +20,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.35.2' # Versi Flutter dengan Dart 3.10
+          flutter-version: '3.35.2' # Gunakan versi ini untuk mendukung dependency terbaru
           channel: 'stable'
 
       - name: Extract & Cari pubspec.yaml
@@ -36,14 +35,14 @@ jobs:
 
       - name: Buat Project Baru & Salin Kode
         run: |
-          # 1. Buat project baru yang valid
+          # 1. Buat project baru yang valid (kunci utama anti-gagal)
           flutter create -t app new_app
 
-          # 2. Cari folder sumber
+          # 2. Cari folder sumber dari ZIP
           SRC_DIR=$(dirname $(find extracted -name "pubspec.yaml" | head -n 1))
           echo "Source directory: $SRC_DIR"
 
-          # 3. Salin lib/ (kode utama)
+          # 3. Salin kode utama (lib/)
           if [ -d "$SRC_DIR/lib" ]; then
             rm -rf new_app/lib
             cp -r "$SRC_DIR/lib" new_app/lib
