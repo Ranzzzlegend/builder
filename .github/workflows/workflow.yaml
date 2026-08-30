@@ -35,14 +35,11 @@ jobs:
 
       - name: Buat Project Baru & Salin Kode
         run: |
-          # 1. Buat project baru yang valid
           flutter create -t app new_app
-
-          # 2. Cari folder sumber dari ZIP
           SRC_DIR=$(dirname $(find extracted -name "pubspec.yaml" | head -n 1))
           echo "Source directory: $SRC_DIR"
 
-          # 3. Salin kode utama (lib/)
+          # Salin kode utama
           if [ -d "$SRC_DIR/lib" ]; then
             rm -rf new_app/lib
             cp -r "$SRC_DIR/lib" new_app/lib
@@ -51,38 +48,19 @@ jobs:
             exit 1
           fi
 
-          # 4. Salin pubspec.yaml
+          # Salin pubspec.yaml
           cp "$SRC_DIR/pubspec.yaml" new_app/pubspec.yaml
 
-          # 5. HAPUS folder assets yang rusak dan buat yang baru
+          # Hapus assets yang rusak dan buat folder baru
           rm -rf new_app/assets
           mkdir -p new_app/assets
-          
-          # Salin assets hanya jika ada dan valid
+
+          # Salin assets jika ada
           if [ -d "$SRC_DIR/assets" ]; then
             cp -r "$SRC_DIR/assets"/* new_app/assets/ 2>/dev/null || true
           fi
 
-          # 6. PERBAIKI pubspec.yaml: Hapus referensi asset yang tidak valid
-          cat > fix_assets.py << 'EOF'
-import re
-
-# Baca pubspec.yaml
-with open('new_app/pubspec.yaml', 'r') as f:
-    content = f.read()
-
-# Hapus bagian assets: yang mungkin rusak
-# Cari pola assets: dan hapus sampai indentasi berikutnya
-content = re.sub(r'assets:\s*\n(?:\s+-\s+.*\n?)*', 'assets:\n  - assets/\n', content)
-
-# Tulis kembali
-with open('new_app/pubspec.yaml', 'w') as f:
-    f.write(content)
-EOF
-          python3 fix_assets.py
-
-          # Pastikan folder assets ada
-          mkdir -p new_app/assets
+          # Buat file placeholder agar folder assets tidak kosong
           echo "test" > new_app/assets/.gitkeep
 
       - name: Install Dependencies
@@ -91,7 +69,6 @@ EOF
       - name: Build APK
         run: |
           cd new_app
-          # Bersihkan cache build jika ada masalah
           flutter clean
           flutter pub get
           flutter build apk --release
