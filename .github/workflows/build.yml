@@ -1,0 +1,223 @@
+name: Flutter Builder
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Tipe Build'
+        required: true
+        type: choice
+        options:
+          - web2apk
+          - generic
+      app_name:
+        description: 'Nama Aplikasi'
+        required: true
+        type: string
+        default: 'MyApp'
+      url:
+        description: 'URL Website'
+        required: false
+        type: string
+        default: ''
+      icon_url:
+        description: 'URL Icon'
+        required: false
+        type: string
+        default: ''
+      package_name:
+        description: 'Package Name'
+        required: false
+        type: string
+        default: 'com.example.app'
+      source_zip_url:
+        description: 'URL ZIP Sumber'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.22.4'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget unzip
+          wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          unzip commandlinetools-linux-9477386_latest.zip
+          mkdir -p android-sdk/cmdline-tools
+          mv cmdline-tools android-sdk/cmdline-tools/latest
+          echo "ANDROID_HOME=${PWD}/android-sdk" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=${PWD}/android-sdk" >> $GITHUB_ENV
+          echo "PATH=${PWD}/android-sdk/cmdline-tools/latest/bin:${PATH}" >> $GITHUB_ENV
+          echo "PATH=${PWD}/android-sdk/platform-tools:${PATH}" >> $GITHUB_ENV
+
+      - name: Accept Android Licenses
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" || true
+
+      - name: Get Source Code
+        id: get_source
+        run: |
+          BUILD_TYPE="${{ github.event.inputs.build_type }}"
+          APP_NAME="${{ github.event.inputs.app_name }}"
+          URL="${{ github.event.inputs.url }}"
+          ICON_URL="${{ github.event.inputs.icon_url }}"
+          PKG_NAME="${{ github.event.inputs.package_name }}"
+          SOURCE_ZIP="${{ github.event.inputs.source_zip_url }}"
+
+          echo "BUILD_TYPE=${BUILD_TYPE}" >> $GITHUB_ENV
+          echo "APP_NAME=${APP_NAME}" >> $GITHUB_ENV
+          echo "PKG_NAME=${PKG_NAME}" >> $GITHUB_ENV
+
+          mkdir -p source
+          cd source
+
+          if [ -n "$SOURCE_ZIP" ]; then
+            curl -L -o source.zip "$SOURCE_ZIP"
+            unzip -o source.zip || true
+            rm source.zip
+            if [ -d "$(find . -maxdepth 1 -type d | grep -v '^.$' | head -1)" ]; then
+              mv $(find . -maxdepth 1 -type d | grep -v '^.$' | head -1)/* . 2>/dev/null || true
+              rm -rf $(find . -maxdepth 1 -type d | grep -v '^.$' | head -1)
+            fi
+          elif [ "$BUILD_TYPE" == "web2apk" ]; then
+            flutter create --org com.example --project-name webapp .
+          else
+            flutter create --org com.example --project-name "${APP_NAME// /_}" .
+          fi
+
+          echo "source_dir=$(pwd)" >> $GITHUB_OUTPUT
+
+      - name: Install Dependencies
+        run: |
+          cd source
+          flutter pub get || true
+
+      - name: Configure App
+        run: |
+          cd source
+
+          if [ -n "$APP_NAME" ]; then
+            sed -i "s/^name:.*/name: ${APP_NAME// /_}/" pubspec.yaml 2>/dev/null || true
+            sed -i "s/^version:.*/version: 1.0.0+1/" pubspec.yaml 2>/dev/null || true
+          fi
+
+          if [ -n "$PKG_NAME" ]; then
+            if [ -f "android/app/build.gradle" ]; then
+              sed -i "s/applicationId .*/applicationId \"${PKG_NAME}\"/" android/app/build.gradle 2>/dev/null || true
+            fi
+          fi
+
+          if [ "$BUILD_TYPE" == "web2apk" ] && [ -n "$URL" ]; then
+            flutter pub add webview_flutter || true
+
+            cat > lib/main.dart << 'EOF'
+import 'package:flutter/material.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+
+void main() {
+  runApp(MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Web App',
+      debugShowCheckedModeBanner: false,
+      home: WebViewApp(),
+    );
+  }
+}
+
+class WebViewApp extends StatefulWidget {
+  @override
+  _WebViewAppState createState() => _WebViewAppState();
+}
+
+class _WebViewAppState extends State<WebViewApp> {
+  late final WebViewController controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(const Color(0x00000000))
+      ..loadRequest(Uri.parse('$URL'));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: WebViewWidget(controller: controller),
+      ),
+    );
+  }
+}
+EOF
+          fi
+
+          if [ -n "$ICON_URL" ]; then
+            mkdir -p android/app/src/main/res/mipmap-hdpi
+            mkdir -p android/app/src/main/res/mipmap-mdpi
+            mkdir -p android/app/src/main/res/mipmap-xhdpi
+            mkdir -p android/app/src/main/res/mipmap-xxhdpi
+            mkdir -p android/app/src/main/res/mipmap-xxxhdpi
+
+            curl -L -o temp_icon.png "$ICON_URL" || true
+            sudo apt-get install -y imagemagick || true
+
+            if [ -f temp_icon.png ]; then
+              convert temp_icon.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png 2>/dev/null || true
+              convert temp_icon.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png 2>/dev/null || true
+              convert temp_icon.png -resize 96x96 android/app/src/main/res/mipmap-xhdpi/ic_launcher.png 2>/dev/null || true
+              convert temp_icon.png -resize 72x72 android/app/src/main/res/mipmap-hdpi/ic_launcher.png 2>/dev/null || true
+              convert temp_icon.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png 2>/dev/null || true
+              rm temp_icon.png
+            fi
+          fi
+
+      - name: Build APK
+        run: |
+          cd source
+          flutter build apk --release || true
+
+          if [ -f "build/app/outputs/flutter-apk/app-release.apk" ]; then
+            cp build/app/outputs/flutter-apk/app-release.apk ../app.apk
+            echo "APK built successfully"
+          elif [ -f "build/app/outputs/apk/release/app-release.apk" ]; then
+            cp build/app/outputs/apk/release/app-release.apk ../app.apk
+            echo "APK built successfully"
+          else
+            echo "Build failed - APK not found"
+            exit 1
+          fi
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ github.run_id }}
+          path: app.apk
+          retention-days: 7
